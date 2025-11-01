@@ -27,6 +27,7 @@ import openpi.training.misc.roboarena_config as roboarena_config
 import openpi.training.optimizer as _optimizer
 import openpi.training.weight_loaders as weight_loaders
 import openpi.transforms as _transforms
+import openpi.policies.piper_policy as piper_policy
 
 ModelType: TypeAlias = _model.ModelType
 # Work around a tyro issue with using nnx.filterlib.Filter directly.
@@ -454,6 +455,33 @@ class LeRobotDROIDDataConfig(DataConfigFactory):
 
 
 @dataclasses.dataclass(frozen=True)
+class LeRobotPiperDataConfig(DataConfigFactory):
+    @override
+    def create(self, assets_dirs: pathlib.Path, model_config: _model.BaseModelConfig) -> DataConfig:
+        return dataclasses.replace(
+            self.create_base_config(assets_dirs, model_config),
+            repack_transforms=_transforms.Group(),
+            data_transforms=_transforms.Group(
+                inputs=[
+                    piper_policy.PiperInputs(
+                        two_arms=True,
+                        model_type=model_config.model_type,
+                        base_image_key="observation.images.stereo",
+                        wrist1_key="observation.images.wrist1",
+                        wrist2_key="observation.images.wrist2",
+                        state_key="observation.state",
+                        actions_key="actions",
+                        prompt_key=None,
+                    )
+                ],
+                outputs=[piper_policy.PiperOutputs(two_arms=True)],
+            ),
+            model_transforms=ModelTransformFactory(
+                default_prompt="fold the towel")(model_config),
+            action_sequence_keys=("actions",),
+        )
+
+@dataclasses.dataclass(frozen=True)
 class TrainConfig:
     # Name of the config. Must be unique. Will be used to reference this config.
     name: tyro.conf.Suppress[str]
@@ -752,6 +780,27 @@ _CONFIGS = [
         pytorch_weight_path="/path/to/your/pytorch_weight_path",
         num_train_steps=30_000,
     ),
+
+    TrainConfig(
+        name="pi05_piper_towel",
+        model=pi0_config.Pi0Config(pi05=True, action_horizon=10, discrete_state_input=False),
+        data=LeRobotPiperDataConfig(
+            repo_id="local/piper_towel_v0_converted",
+            base_config=DataConfig(prompt_from_task=False),
+        ),
+        batch_size=16,                           # overfit-friendly
+        lr_schedule=_optimizer.CosineDecaySchedule(
+            warmup_steps=100,
+            peak_lr=3e-4,
+            decay_steps=5_000,
+            decay_lr=3e-4,
+        ),
+        optimizer=_optimizer.AdamW(clip_gradient_norm=1.0),
+        ema_decay=None,                          # makes overfitting faster
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
+        num_train_steps=1_000,                   # tweak as needed
+    ),
+
     #
     # Fine-tuning Aloha configs.
     #
