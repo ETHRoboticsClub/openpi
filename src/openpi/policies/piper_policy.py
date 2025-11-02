@@ -65,14 +65,11 @@ class PiperInputs(transforms.DataTransformFn):
             "base_0_rgb": base,
             "left_wrist_0_rgb": wrist1,
         }
-        image_mask = {
-            "base_0_rgb": np.True_,
-            "left_wrist_0_rgb": np.True_,
-        }
+        image_mask = {"base_0_rgb": np.True_, "left_wrist_0_rgb": np.True_}
 
         if self.two_arms:
-            images["right_wrist_1_rgb"] = wrist2
-            image_mask["right_wrist_1_rgb"] = np.True_
+            images["right_wrist_0_rgb"] = wrist2
+            image_mask["right_wrist_0_rgb"] = np.True_
         else:
             # fill missing right wrist with zeros if PI0 expects all slots
             images["right_wrist_0_rgb"] = np.zeros_like(base)
