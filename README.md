@@ -321,3 +321,66 @@ We will collect common issues and their solutions here. If you encounter an issu
 | Import errors when running examples       | Make sure you've installed all dependencies with `uv sync`. Some examples may have additional requirements listed in their READMEs.                    |
 | Action dimensions mismatch                | Verify your data processing transforms match the expected input/output dimensions of your robot. Check the action space definitions in your policy classes.                                  |
 | Diverging training loss                            | Check the `q01`, `q99`, and `std` values in `norm_stats.json` for your dataset. Certain dimensions that are rarely used can end up with very small `q01`, `q99`, or `std` values, leading to huge states and actions after normalization. You can manually adjust the norm stats as a workaround. |
+
+## Running fine tuned piper towel folding policy
+
+This project fine-tunes the π₀.₅ policy on the Piper towel dataset and provides scripts to reproduce training and serve the trained model.
+
+### Prerequisites
+- [`uv`](https://docs.astral.sh/uv/) installed (`pip install uv`).
+- Hugging Face CLI (`hf`) logged in with a token that can read `ETHRC/piper_towel_v0_with_rewards`.
+- Optional: Weights & Biases API key for online logging (set `WANDB_MODE=offline` to disable).
+
+You can store secrets in `secrets.env`:
+
+HUGGINGFACE_HUB_TOKEN=hf_...
+WANDB_API_KEY=...
+
+
+
+### End-to-End Training
+
+Run the workflow script to convert the dataset, compute norm stats, and train:
+
+```bash
+./scripts/piper_towel_workflow.sh \
+    SOURCE_REPO_ID=ETHRC/piper_towel_v0_with_rewards \
+    TARGET_REPO_ID=local/piper_towel_v0_converted \
+    EXP_NAME=piper_towel_full
+Artifacts:
+
+Norm stats → assets/pi05_piper_towel/local/piper_towel_v0_converted/
+Checkpoints → checkpoints/pi05_piper_towel/piper_towel_full/<step>/
+W&B run (if enabled) → project openpi, run name --exp-name.
+Env overrides (set as needed): MAX_EPISODES, NUM_TRAIN_STEPS, BATCH_SIZE, XLA_MEM_FRACTION, FORCE_RECONVERT, DOWNLOAD_VIDEOS.
+
+Serving the Trained Policy
+Download the published checkpoint (params + norm stats) and launch the policy server:
+
+bash
+
+HF_REPO_ID=JessieLoki/pi05-piper-towel \
+CHECKPOINT_STEP=999 \
+./scripts/run_piper_policy.sh
+The script uses hf download to fetch the checkpoint into checkpoints/pi05_piper_towel/piper_towel_full/999/ (skip optimizer state by default) and runs:
+
+
+uv run scripts/serve_policy.py policy:checkpoint \
+    --policy.config=pi05_piper_towel \
+    --policy.dir=checkpoints/pi05_piper_towel/piper_towel_full/999 \
+    --port=8000
+Connect with your runtime or the sample client:
+
+bash
+
+uv run examples/simple_client/run_client.py \
+    --host 127.0.0.1 --port 8000 \
+    --config pi05_piper_towel \
+    --from-lerobot ~/.cache/huggingface/lerobot/local/piper_towel_v0_converted \
+    --episode 0 --timestep 0
+Notes
+Set INCLUDE_TRAIN_STATE=1 when running scripts/run_piper_policy.sh if you also need optimizer state.
+scripts/piper_towel_workflow.sh and scripts/run_piper_policy.sh are executable; share them with teammates to reproduce training or serving quickly.
+Checkpoint “999” is published at https://huggingface.co/JessieLoki/pi05-piper-towel.
+
+
